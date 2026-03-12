@@ -1,0 +1,44 @@
+# =============================================================================
+# TALARIA Requirements
+# Python 3.8+
+# =============================================================================
+
+# --- PyTorch (install with appropriate CUDA version from https://pytorch.org) ---
+torch>=2.0.0
+torchvision>=0.15.0
+
+# --- Mamba SSM (requires CUDA 11.6+) ---
+# Install separately: pip install mamba-ssm
+# See: https://github.com/state-spaces/mamba
+mamba-ssm>=1.2.0
+
+# --- Medical Imaging ---
+nibabel>=4.0.0
+SimpleITK>=2.2.0
+monai>=1.2.0
+
+# --- Scientific Computing ---
+numpy>=1.23.0
+scipy>=1.10.0
+scikit-learn>=1.2.0
+
+# --- Data Processing ---
+einops>=0.6.0
+pandas>=1.5.0
+
+# --- Configuration ---
+pyyaml>=6.0
+
+# --- Visualization / Logging ---
+wandb>=0.15.0
+matplotlib>=3.6.0
+tqdm>=4.65.0
+
+# --- Utilities ---
+pillow>=9.4.0
+h5py>=3.8.0
+
+# --- Development (optional) ---
+pytest>=7.3.0
+black>=23.0.0
+flake8>=6.0.0

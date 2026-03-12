@@ -1,0 +1,55 @@
+# =============================================================================
+# TALARIA Phase 2: DINOv2-style Knowledge Distillation Configuration
+# =============================================================================
+
+# --- Teacher (Phase 1 pretrained encoder — large) ---
+teacher:
+  embed_dim:  192
+  patch_size: 8
+  depth:      12
+  d_state:    16
+  expand:     2
+
+# --- Student (lightweight target encoder) ---
+student:
+  embed_dim:  96        # half of teacher → 86% parameter reduction
+  patch_size: 8
+  depth:      6         # half of teacher
+  d_state:    16
+  expand:     2
+  drop:       0.1
+
+# --- DINOv2 EMA ---
+init_teacher_from_phase1: true   # true: load Phase 1 ckpt into EMA teacher
+                                 # false: start EMA teacher from student weights
+ema_momentum: 0.996              # higher = teacher changes more slowly (stable)
+
+# --- Loss ---
+temperature: 0.1                 # cosine loss temperature (lower = sharper)
+
+# --- CT Multi-view Augmentation ---
+aug_intensity_shift: 0.1         # random HU shift range
+aug_intensity_scale: 0.1         # random intensity scale jitter
+aug_noise_std:       0.05        # Gaussian noise std
+aug_flip_prob:       0.5         # per-axis random flip probability
+aug_rot_prob:        0.5         # random 90-degree rotation probability
+
+# --- Dataset Paths ---
+lits_root:  /path/to/lits
+tcia_root:  /path/to/tcia
+amos_root:  /path/to/amos
+
+# --- Patch Extraction ---
+stride: 48
+
+# --- Training ---
+epochs:      50
+batch_size:  8
+num_workers: 4
+
+# --- Optimizer ---
+lr:           5.0e-4
+weight_decay: 0.05
+
+# --- Checkpoint ---
+save_every: 10

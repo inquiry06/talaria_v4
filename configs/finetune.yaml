@@ -1,0 +1,42 @@
+# =============================================================================
+# TALARIA Phase 3: Task-Specific Fine-tuning Configuration
+# =============================================================================
+
+# --- Model (Student encoder dimensions, must match distill.yaml student) ---
+mode:        finetune
+embed_dim:   96
+patch_size:  8
+depth:       6
+drop:        0.1
+freeze_encoder: true   # Encoder is frozen during Phase 3
+
+# --- Dataset Paths ---
+lits_root:  /path/to/lits      # LiTS (Phase 3 fine-tuning + evaluation)
+
+# --- Patch Extraction ---
+stride:      48
+
+# --- Loss Weights ---
+t_seg_weight: 1.0    # T-Branch (large tumor) segmentation loss weight
+n_seg_weight: 2.0    # N-Branch (micro lymph node) — higher weight for small structures
+t_cls_weight: 0.5    # T-Stage classification loss weight
+n_cls_weight: 0.5    # N-Stage classification loss weight
+
+# --- Phase 3(a): Segmentation Head Training ---
+seg_epochs:  50
+seg_lr:      3.0e-4
+
+# --- Phase 3(b+c): Classification Head Training ---
+cls_epochs:  30
+cls_lr:      1.0e-4
+
+# --- Shared ---
+batch_size:  4
+num_workers: 4
+weight_decay: 0.01
+
+# --- Inference ---
+seg_threshold: 0.5    # Binary mask threshold after sigmoid
+
+# --- Checkpoint ---
+save_every:  10

@@ -1,0 +1,38 @@
+# =============================================================================
+# TALARIA Phase 1: Self-Supervised Pre-training Configuration
+# =============================================================================
+
+# --- Model Architecture ---
+embed_dim:        192
+token_patch_size: 8         # tokenization patch size (cubic)
+depth:            12
+d_state:          16
+expand:           2
+drop:             0.1
+
+# --- Reconstruction Decoder ---
+decoder_dim: 128
+
+# --- Masking ---
+mask_ratio:  0.40     # Fraction of tokens to mask
+
+# --- Dataset Paths ---
+lits_root:  /path/to/lits
+tcia_root:  /path/to/tcia
+amos_root:  /path/to/amos
+
+# --- Patch Extraction ---
+volume_patch_size: 96       # sliding window size (voxels)
+stride:            48       # 50% overlap
+
+# --- Training ---
+epochs:      100
+batch_size:  4
+num_workers: 4
+
+# --- Optimizer ---
+lr:           1.0e-4
+weight_decay: 0.05
+
+# --- Checkpoint ---
+save_every: 10
