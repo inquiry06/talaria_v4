@@ -229,6 +229,100 @@ class KnowledgeDistillLoss(nn.Module):
 
 
 # ---------------------------------------------------------------------------
+# Multi-class Focal Loss (Classification용)
+# ---------------------------------------------------------------------------
+
+class MultiClassFocalLoss(nn.Module):
+    """
+    α-balanced Focal Loss for multi-class classification.
+    (Lin et al., 2017 — softmax 기반, N-stage binary classification에 사용)
+
+    FL(p_t) = -α_t * (1 - p_t)^gamma * log(p_t)
+
+    Args:
+        alpha:      per-class weight tensor, shape (C,). None이면 uniform.
+                    N-stage의 경우 N0:N1 imbalance 보정용으로 [1.0, 6.5] 권장.
+        gamma:      focusing parameter. 0이면 standard cross-entropy.
+                    N-stage binary의 경우 gamma=2.0 (Lin et al. 기본값)
+        ignore_index: 해당 label은 loss 계산에서 제외
+    """
+
+    def __init__(
+        self,
+        alpha: Optional[torch.Tensor] = None,
+        gamma: float = 2.0,
+        ignore_index: int = -1,
+    ):
+        super().__init__()
+        if alpha is not None:
+            self.register_buffer('alpha', alpha.float())
+        else:
+            self.alpha = None
+        self.gamma        = gamma
+        self.ignore_index = ignore_index
+
+    def forward(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Args:
+            logits:  (B, C) raw logits
+            targets: (B,)   integer class labels
+        Returns:
+            scalar focal loss
+        """
+        if self.ignore_index >= 0:
+            valid = targets != self.ignore_index
+            logits  = logits[valid]
+            targets = targets[valid]
+        if targets.numel() == 0:
+            return logits.sum() * 0.0
+
+        log_p = F.log_softmax(logits, dim=-1)          # (B, C)
+        p     = log_p.exp()                             # (B, C)
+
+        # gather p_t and log_p_t for the true class
+        log_p_t = log_p.gather(1, targets.unsqueeze(1)).squeeze(1)   # (B,)
+        p_t     = p.gather(1, targets.unsqueeze(1)).squeeze(1)        # (B,)
+
+        focal_weight = (1.0 - p_t) ** self.gamma                      # (B,)
+
+        if self.alpha is not None:
+            alpha_t = self.alpha[targets]                              # (B,)
+            focal_weight = alpha_t * focal_weight
+
+        loss = -(focal_weight * log_p_t)
+        return loss.mean()
+
+    def forward_soft(
+        self,
+        logits: torch.Tensor,
+        soft_targets: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Manifold Mixup용 soft-target focal loss.
+        soft_targets: (B, C) one-hot mixture
+
+        focal weight는 argmax(soft_targets)의 p_t 기준으로 계산.
+        """
+        log_p = F.log_softmax(logits, dim=-1)
+        p     = log_p.exp()
+
+        pseudo_hard = soft_targets.argmax(dim=-1)              # (B,)
+        p_t = p.gather(1, pseudo_hard.unsqueeze(1)).squeeze(1) # (B,)
+        focal_weight = (1.0 - p_t) ** self.gamma               # (B,)
+
+        if self.alpha is not None:
+            alpha_t = self.alpha[pseudo_hard]
+            focal_weight = alpha_t * focal_weight
+
+        ce = -(soft_targets * log_p).sum(dim=-1)               # (B,)
+        return (focal_weight * ce).mean()
+
+
+# ---------------------------------------------------------------------------
 # TALARIA Combined Loss (Phase 3)
 # ---------------------------------------------------------------------------
 
@@ -239,17 +333,15 @@ class TALARIALoss(nn.Module):
     Components:
         - T-Branch: BCEDice for tumor segmentation
         - N-Branch: FocalTverskyLoss (alpha=0.3, beta=0.7, gamma=0.75)
-                    Replaces the previous BCEDice+Focal combination.
-                    Heavy FN penalty (beta=0.7) is essential for sparse lymph nodes;
-                    focal exponent (gamma=0.75) concentrates gradient on hard voxels.
-        - T-Stage:  Cross-Entropy
-        - N-Stage:  Cross-Entropy
+        - T-Stage:  CrossEntropyLoss (class-weighted, morphological feature 기반)
+        - N-Stage:  α-balanced MultiClassFocalLoss (gamma=2.0, alpha=[1.0, 6.5])
+                    N0/N1 class imbalance 대응 + hard negative mining
     """
 
     def __init__(
         self,
         t_seg_weight: float = 1.0,
-        n_seg_weight: float = 2.0,   # higher weight for micro lymph nodes
+        n_seg_weight: float = 2.0,
         t_cls_weight: float = 0.5,
         n_cls_weight: float = 0.5,
     ):
@@ -261,10 +353,18 @@ class TALARIALoss(nn.Module):
 
         self.t_seg_loss = BCEDiceLoss(bce_weight=0.5, dice_weight=0.5)
         self.n_seg_loss = FocalTverskyLoss(alpha=0.3, beta=0.7, gamma=0.75)
+
+        # T-Stage: class-weighted CE (morphological feature MLP)
         self.register_buffer('t_cls_weight', torch.tensor([1.0, 1.3, 0.8, 0.7], dtype=torch.float32))
-        self.register_buffer('n_cls_weight', torch.tensor([1.0, 6.5], dtype=torch.float32))
         self.t_cls_loss = nn.CrossEntropyLoss(weight=self.t_cls_weight, ignore_index=-1)
-        self.n_cls_loss = nn.CrossEntropyLoss(weight=self.n_cls_weight, ignore_index=-1)
+
+        # N-Stage: α-balanced focal loss (N1 minority class 강조)
+        self.register_buffer('n_focal_alpha', torch.tensor([1.0, 6.5], dtype=torch.float32))
+        self.n_cls_loss = MultiClassFocalLoss(
+            alpha=torch.tensor([1.0, 6.5]),
+            gamma=2.0,
+            ignore_index=-1,
+        )
 
     def _soft_cross_entropy(
         self,
@@ -340,7 +440,8 @@ class TALARIALoss(nn.Module):
 
         if n_stage_gt is not None:
             if n_stage_soft is not None:
-                l = self._soft_cross_entropy(n_cls_logit, n_stage_soft.to(dtype=n_cls_logit.dtype), self.n_cls_weight)
+                l = self.n_cls_loss.forward_soft(
+                    n_cls_logit, n_stage_soft.to(dtype=n_cls_logit.dtype))
             elif mixup_lam is not None and mixup_perm is not None:
                 n_soft = self._mixup_soft_targets(
                     hard_targets=n_stage_gt,
@@ -349,7 +450,7 @@ class TALARIALoss(nn.Module):
                     perm=mixup_perm,
                     dtype=n_cls_logit.dtype,
                 )
-                l = self._soft_cross_entropy(n_cls_logit, n_soft, self.n_cls_weight)
+                l = self.n_cls_loss.forward_soft(n_cls_logit, n_soft)
             else:
                 l = self.n_cls_loss(n_cls_logit, n_stage_gt)
             losses['n_cls'] = l.item()
