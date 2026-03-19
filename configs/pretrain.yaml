@@ -14,7 +14,7 @@ drop:             0.1
 decoder_dim: 128
 
 # --- Masking ---
-mask_ratio:  0.40     # Fraction of tokens to mask
+mask_ratio:  0.75     # Fraction of tokens to mask
 
 # --- Dataset Paths ---
 lits_root:  /path/to/lits
