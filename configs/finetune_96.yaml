@@ -1,7 +1,7 @@
 # TALARIA Phase 3 Fine-tuning — patch size 96
 
 data_root:      /home/introai14/talaria/data/HCC_TACE
-metadata_path:  /home/introai14/talaria/data/hcc_tnm_labels.json
+metadata_path: /home/introai14/projects/talaria-main/datasets/hcc_tnm_labels.json
 
 patch_size:     96
 batch_size:     2
